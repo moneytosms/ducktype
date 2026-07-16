@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   FaArrowRotateLeft as RotateCcw,
   FaBackward as Rewind,
-  FaChartColumn as BarChart2,
   FaCheck as Check,
   FaChevronRight as ChevronRight,
   FaCode as Code2,
@@ -36,7 +35,10 @@ import { defaultSettings, getDomainDefaults, getFilters, matchSnippets, selectSn
 import { loadStats, recordTestCompleted, recordTestStarted, saveStats, type StatsStore } from "@/lib/stats-store";
 import { loadSettings, saveSettings } from "@/lib/settings-store";
 import { createCustomSnippet, loadCustomSnippets, saveCustomSnippets } from "@/lib/custom-snippets-store";
-import { createClient } from "@/lib/supabase/client";
+import { useAuthUser, type AuthUser } from "@/lib/supabase/use-auth-user";
+import { signInWithProvider as signIn, signOut } from "@/lib/supabase/auth-actions";
+import { pushSettings, pushStats, syncOnSignIn } from "@/lib/supabase/sync";
+import { getUsername } from "@/lib/supabase/profile";
 import { cn } from "@/lib/utils";
 
 type TokenChar = {
@@ -119,9 +121,9 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
   const [now, setNow] = useState(0);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [tokens, setTokens] = useState<TokenChar[]>([]);
-  const [authLabel, setAuthLabel] = useState("sign in");
+  const user = useAuthUser();
   const [pickedId, setPickedId] = useState<string | null>(null);
-  const [, setStatsStore] = useState<StatsStore>({ version: 1, testsStarted: 0, sessions: [] });
+  const [statsStore, setStatsStore] = useState<StatsStore>({ version: 1, testsStarted: 0, sessions: [] });
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const windowRef = useRef<HTMLDivElement>(null);
@@ -129,6 +131,7 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
   const samplesRef = useRef<KeySample[]>([]);
   const lastActivityRef = useRef(0);
   const recordedCompletionRef = useRef(false);
+  const hasSyncedCloudRef = useRef(false);
   const [finalSamples, setFinalSamples] = useState<KeySample[]>([]);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -161,6 +164,7 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
       setStatsStore((current) => {
         const next = recordTestStarted(current);
         saveStats(next);
+        void pushStats(next).catch(() => {});
         return next;
       });
     }, 0);
@@ -181,6 +185,7 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
           accuracy: stats.accuracy,
         });
         saveStats(next);
+        void pushStats(next).catch(() => {});
         return next;
       });
     }, 0);
@@ -190,6 +195,7 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
   useEffect(() => {
     if (!settingsLoaded) return;
     saveSettings(settings);
+    void pushSettings(settings).catch(() => {});
     document.documentElement.dataset.theme = settings.theme;
     const font = fonts.find((option) => option.label === settings.font) ?? fonts[0];
     document.documentElement.style.setProperty("--duck-font", font.value);
@@ -230,12 +236,23 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
     if (isComplete) setFinalSamples([...samplesRef.current]);
   }, [isComplete]);
 
+  // runs once per sign-in: merges this device's local stats/settings with
+  // whatever's already in the cloud (cloud wins if a row exists there)
   useEffect(() => {
-    const supabase = createClient();
-    supabase?.auth.getUser().then(({ data }) => {
-      setAuthLabel(data.user ? data.user.email ?? "account" : "sign in");
+    if (!user || !settingsLoaded || hasSyncedCloudRef.current) return;
+    hasSyncedCloudRef.current = true;
+    syncOnSignIn(statsStore, settings).then((merged) => {
+      if (!merged) return;
+      setStatsStore(merged.stats);
+      saveStats(merged.stats);
+      setSettings(merged.settings);
+      saveSettings(merged.settings);
     });
-  }, []);
+  }, [user, settingsLoaded, statsStore, settings]);
+
+  useEffect(() => {
+    if (!user) hasSyncedCloudRef.current = false;
+  }, [user]);
 
   // auto-fit: size the font so the snippet's longest line spans the container width
   useLayoutEffect(() => {
@@ -486,20 +503,18 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
     }
   }
 
-  async function signIn(provider: "github" | "google") {
-    const supabase = createClient();
-    if (!supabase) {
-      setAuthLabel("env missing");
+  const [username, setUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUsername(null);
       return;
     }
+    getUsername().then(setUsername);
+  }, [user]);
 
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-  }
+  const authLabel = user ? username ?? user.email ?? "account" : "sign in";
 
   const themeLabel = themes.find((option) => option.id === settings.theme)?.label ?? settings.theme;
 
@@ -602,6 +617,9 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
           onRestart={restart}
           onNext={nextSnippet}
           onSignIn={signIn}
+          onSignOut={signOut}
+          authUser={user}
+          authLabel={authLabel}
           onOpenSettings={() => router.push("/settings")}
           onAddCustom={() => setIsAddSnippetOpen(true)}
         />
@@ -639,13 +657,14 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
           <Link className="icon-button" href="/settings" title="Settings">
             <Settings size={17} />
           </Link>
-          <Link className="icon-button" href="/profile" title="Profile">
-            <BarChart2 size={17} />
+          <Link
+            className="icon-button !w-auto gap-2 px-2.5"
+            href="/profile"
+            title="profile & account"
+          >
+            <User size={17} />
+            <span className="hidden text-xs md:inline">{authLabel}</span>
           </Link>
-          <button className="hidden items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-[var(--muted)] transition-colors hover:text-[var(--text)] md:flex" onClick={() => signIn("github")}>
-            <User size={14} />
-            {authLabel}
-          </button>
         </div>
       </header>
 
@@ -776,6 +795,9 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
         onRestart={restart}
         onNext={nextSnippet}
         onSignIn={signIn}
+        onSignOut={signOut}
+        authUser={user}
+        authLabel={authLabel}
         onOpenSettings={() => router.push("/settings")}
         onAddCustom={() => setIsAddSnippetOpen(true)}
       />
@@ -1397,6 +1419,9 @@ function Palette({
   onRestart,
   onNext,
   onSignIn,
+  onSignOut,
+  authUser,
+  authLabel,
   onOpenSettings,
   onPickSnippet,
   onRandom,
@@ -1414,6 +1439,9 @@ function Palette({
   onRestart: () => void;
   onNext: () => void;
   onSignIn: (provider: "github" | "google") => void;
+  onSignOut: () => void;
+  authUser: AuthUser | null;
+  authLabel: string;
   onOpenSettings: () => void;
   onPickSnippet: (id: string) => void;
   onRandom: () => void;
@@ -1444,8 +1472,14 @@ function Palette({
             </Command.Item>
             <Command.Item onSelect={() => { onAddCustom(); onClose(); }}><Plus size={15} />paste custom snippet</Command.Item>
             <Command.Item onSelect={() => { onClose(); onOpenSettings(); }}><Settings size={15} />open settings</Command.Item>
-            <Command.Item onSelect={() => onSignIn("github")}><User size={15} />sign in with GitHub</Command.Item>
-            <Command.Item onSelect={() => onSignIn("google")}><User size={15} />sign in with Google</Command.Item>
+            {authUser ? (
+              <Command.Item onSelect={() => { onSignOut(); onClose(); }}><User size={15} />sign out ({authLabel})</Command.Item>
+            ) : (
+              <>
+                <Command.Item onSelect={() => onSignIn("github")}><User size={15} />sign in with GitHub</Command.Item>
+                <Command.Item onSelect={() => onSignIn("google")}><User size={15} />sign in with Google</Command.Item>
+              </>
+            )}
           </Command.Group>
           <Command.Group heading="Snippets">
             {pool.map((entry) => (
