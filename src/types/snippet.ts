@@ -1,6 +1,6 @@
 import type { BundledLanguage } from "shiki";
 
-export type PracticeDomain = "dsa" | "backend" | "frontend" | "devops" | "language";
+export type PracticeDomain = "dsa" | "backend" | "frontend" | "devops" | "language" | "custom";
 
 export type Snippet = {
   id: string;

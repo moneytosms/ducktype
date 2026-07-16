@@ -19,6 +19,7 @@ import {
   FaList as List,
   FaMagnifyingGlass as Search,
   FaPalette as PaletteIcon,
+  FaPlus as Plus,
   FaServer as Server,
   FaShuffle as Shuffle,
   FaTerminal as Terminal,
@@ -26,7 +27,7 @@ import {
   FaUser as User,
   FaXmark as X,
 } from "react-icons/fa6";
-import { codeToTokens, type BundledTheme } from "shiki";
+import { codeToTokens, type BundledLanguage, type BundledTheme } from "shiki";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Snippet, DuckSettings, PracticeDomain } from "@/types/snippet";
 import { countErrors, getCharacterState } from "@/lib/typing/compare";
@@ -34,6 +35,7 @@ import { calculateStats, type TypingStats } from "@/lib/typing/stats";
 import { defaultSettings, getDomainDefaults, getFilters, matchSnippets, selectSnippet } from "@/lib/snippets";
 import { loadStats, recordTestCompleted, recordTestStarted, saveStats, type StatsStore } from "@/lib/stats-store";
 import { loadSettings, saveSettings } from "@/lib/settings-store";
+import { createCustomSnippet, loadCustomSnippets, saveCustomSnippets } from "@/lib/custom-snippets-store";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +75,22 @@ export const fontSizes: { id: DuckSettings["fontSize"]; label: string; value: st
 
 export const caretStyles: DuckSettings["caretStyle"][] = ["bar", "block", "underline"];
 
+export const customLanguageOptions: { label: string; language: string; shikiLang: BundledLanguage }[] = [
+  { label: "Python", language: "Python", shikiLang: "python" },
+  { label: "JavaScript", language: "JavaScript", shikiLang: "javascript" },
+  { label: "TypeScript", language: "TypeScript", shikiLang: "typescript" },
+  { label: "TSX", language: "TypeScript", shikiLang: "tsx" },
+  { label: "Go", language: "Go", shikiLang: "go" },
+  { label: "Rust", language: "Rust", shikiLang: "rust" },
+  { label: "Java", language: "Java", shikiLang: "java" },
+  { label: "C++", language: "C++", shikiLang: "cpp" },
+  { label: "C", language: "C", shikiLang: "c" },
+  { label: "Bash", language: "Bash", shikiLang: "bash" },
+  { label: "SQL", language: "SQL", shikiLang: "sql" },
+  { label: "YAML", language: "YAML", shikiLang: "yaml" },
+  { label: "JSON", language: "JSON", shikiLang: "json" },
+];
+
 export const funboxes: { id: DuckSettings["funbox"]; label: string; desc: string }[] = [
   { id: "none", label: "none", desc: "standard test" },
   { id: "blind", label: "blind", desc: "no error highlighting while typing" },
@@ -89,9 +107,12 @@ const AFK_MS = 6700;
 
 const testSettingKeys = ["domain", "language", "framework", "track", "durationSeconds", "funbox"] as const;
 
-export function DuckTypeApp({ snippets }: { snippets: Snippet[] }) {
+export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[] }) {
   const router = useRouter();
   const [settings, setSettings] = useState<DuckSettings>(defaultSettings);
+  const [customSnippets, setCustomSnippets] = useState<Snippet[]>([]);
+  const snippets = useMemo(() => [...curatedSnippets, ...customSnippets], [curatedSnippets, customSnippets]);
+  const [isAddSnippetOpen, setIsAddSnippetOpen] = useState(false);
   const [snippetOffset, setSnippetOffset] = useState(0);
   const [typed, setTyped] = useState("");
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -129,6 +150,7 @@ export function DuckTypeApp({ snippets }: { snippets: Snippet[] }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSettings(loadSettings());
     setStatsStore(loadStats());
+    setCustomSnippets(loadCustomSnippets());
     setSettingsLoaded(true);
   }, []);
 
@@ -359,6 +381,18 @@ export function DuckTypeApp({ snippets }: { snippets: Snippet[] }) {
     setPickedId(id);
   }, [resetDraft]);
 
+  const addSnippet = useCallback((input: { title: string; language: string; shikiLang: BundledLanguage; code: string }) => {
+    const created = createCustomSnippet(input);
+    setCustomSnippets((current) => {
+      const next = [...current, created];
+      saveCustomSnippets(next);
+      return next;
+    });
+    updateSettings({ domain: "custom" });
+    pickSnippet(created.id);
+    setIsAddSnippetOpen(false);
+  }, [updateSettings, pickSnippet]);
+
   const randomSnippet = useCallback(() => {
     resetDraft();
     const base = pool.length > 1 ? pool : snippets.filter((entry) => entry.domain === settings.domain);
@@ -377,7 +411,9 @@ export function DuckTypeApp({ snippets }: { snippets: Snippet[] }) {
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        if (isPickerOpen) {
+        if (isAddSnippetOpen) {
+          setIsAddSnippetOpen(false);
+        } else if (isPickerOpen) {
           setIsPickerOpen(false);
         } else if (isPaletteOpen) {
           setIsPaletteOpen(false);
@@ -397,7 +433,7 @@ export function DuckTypeApp({ snippets }: { snippets: Snippet[] }) {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isComplete, isPaletteOpen, isPickerOpen, startedAt, restart, nextSnippet]);
+  }, [isComplete, isPaletteOpen, isPickerOpen, isAddSnippetOpen, startedAt, restart, nextSnippet]);
 
   function handleChange(value: string) {
     if (isComplete) return;
@@ -567,7 +603,12 @@ export function DuckTypeApp({ snippets }: { snippets: Snippet[] }) {
           onNext={nextSnippet}
           onSignIn={signIn}
           onOpenSettings={() => router.push("/settings")}
+          onAddCustom={() => setIsAddSnippetOpen(true)}
         />
+
+        {isAddSnippetOpen ? (
+          <AddSnippetModal onClose={() => setIsAddSnippetOpen(false)} onSubmit={addSnippet} />
+        ) : null}
       </main>
     );
   }
@@ -617,11 +658,19 @@ export function DuckTypeApp({ snippets }: { snippets: Snippet[] }) {
           onUpdate={updateSettings}
           onPickSnippet={pickSnippet}
           onBrowse={() => setIsPickerOpen(true)}
+          onAddCustom={() => setIsAddSnippetOpen(true)}
         />
       </div>
 
       <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center py-8">
-        {isComplete ? (
+        {settings.domain === "custom" && customSnippets.length === 0 ? (
+          <div className="test-head flex flex-col items-center gap-4 py-16 text-center">
+            <p className="text-sm text-[var(--muted)]">No custom snippets yet — paste your own code to start typing it.</p>
+            <button className="result-button" onClick={() => setIsAddSnippetOpen(true)}>
+              <Plus size={14} /> paste a snippet
+            </button>
+          </div>
+        ) : isComplete ? (
           <ResultsPanel stats={stats} snippet={snippet} settings={settings} samples={finalSamples} tokens={tokens} onRestart={restart} onNext={nextSnippet} />
         ) : (
           <div className="w-full">
@@ -728,7 +777,12 @@ export function DuckTypeApp({ snippets }: { snippets: Snippet[] }) {
         onNext={nextSnippet}
         onSignIn={signIn}
         onOpenSettings={() => router.push("/settings")}
+        onAddCustom={() => setIsAddSnippetOpen(true)}
       />
+
+      {isAddSnippetOpen ? (
+        <AddSnippetModal onClose={() => setIsAddSnippetOpen(false)} onSubmit={addSnippet} />
+      ) : null}
     </main>
   );
 }
@@ -761,6 +815,7 @@ const domainOptions: { id: PracticeDomain; label: string; icon: React.ReactNode 
   { id: "frontend", label: "frontend", icon: <Code2 size={13} /> },
   { id: "devops", label: "devops", icon: <Terminal size={13} /> },
   { id: "language", label: "general", icon: <Database size={13} /> },
+  { id: "custom", label: "custom", icon: <Plus size={13} /> },
 ];
 
 function ControlBar({
@@ -771,6 +826,7 @@ function ControlBar({
   onUpdate,
   onPickSnippet,
   onBrowse,
+  onAddCustom,
 }: {
   filters: ReturnType<typeof getFilters>;
   settings: DuckSettings;
@@ -779,6 +835,7 @@ function ControlBar({
   onUpdate: (settings: Partial<DuckSettings>) => void;
   onPickSnippet: (id: string) => void;
   onBrowse: () => void;
+  onAddCustom: () => void;
 }) {
   const hasSecondRow = settings.domain === "dsa";
 
@@ -845,6 +902,14 @@ function ControlBar({
             </ControlButton>
           </ControlGroup>
         )}
+
+        {settings.domain === "custom" ? (
+          <ControlGroup label="">
+            <ControlButton active={false} onClick={onAddCustom} icon={<Plus size={14} />}>
+              paste snippet
+            </ControlButton>
+          </ControlGroup>
+        ) : null}
       </div>
 
       {hasSecondRow ? (
@@ -1114,6 +1179,75 @@ function downloadResultImage(stats: TypingStats, consistency: number, points: Se
   image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+function AddSnippetModal({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (input: { title: string; language: string; shikiLang: BundledLanguage; code: string }) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [optionIndex, setOptionIndex] = useState(0);
+  const [code, setCode] = useState("");
+
+  function handleSubmit() {
+    if (!code.trim()) return;
+    const option = customLanguageOptions[optionIndex];
+    onSubmit({ title: title.trim(), language: option.language, shikiLang: option.shikiLang, code });
+  }
+
+  return (
+    <div className="palette-backdrop" onClick={onClose}>
+      <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="settings-head">
+          <span>paste your own snippet</span>
+          <button className="icon-button" onClick={onClose} title="Close (esc)">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="settings-body">
+          <div className="settings-row">
+            <span className="settings-label">title</span>
+            <input
+              className="select"
+              style={{ width: "100%" }}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="e.g. auth middleware"
+              autoFocus
+            />
+          </div>
+          <div className="settings-row">
+            <span className="settings-label">language</span>
+            <span className="select-wrap">
+              <select className="select" value={optionIndex} onChange={(event) => setOptionIndex(Number(event.target.value))}>
+                {customLanguageOptions.map((option, index) => (
+                  <option key={option.label} value={index}>{option.label.toLowerCase()}</option>
+                ))}
+              </select>
+            </span>
+          </div>
+          <div className="settings-row">
+            <textarea
+              className="select"
+              style={{ width: "100%", minHeight: "12rem", resize: "vertical", fontFamily: "var(--duck-font)" }}
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              placeholder="paste your code here..."
+              spellCheck={false}
+            />
+          </div>
+          <div className="settings-row" style={{ justifyContent: "flex-end" }}>
+            <button className="result-button" onClick={handleSubmit}>
+              <Check size={14} /> save &amp; type it
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReplayModal({
   snippet,
   tokens,
@@ -1266,6 +1400,7 @@ function Palette({
   onOpenSettings,
   onPickSnippet,
   onRandom,
+  onAddCustom,
 }: {
   open: boolean;
   filters: ReturnType<typeof getFilters>;
@@ -1282,6 +1417,7 @@ function Palette({
   onOpenSettings: () => void;
   onPickSnippet: (id: string) => void;
   onRandom: () => void;
+  onAddCustom: () => void;
 }) {
   if (!open) return null;
 
@@ -1306,6 +1442,7 @@ function Palette({
             <Command.Item onSelect={() => { navigator.clipboard.writeText(pool.find((entry) => entry.id === activeSnippetId)?.code ?? ""); onClose(); }}>
               <Copy size={15} />copy snippet
             </Command.Item>
+            <Command.Item onSelect={() => { onAddCustom(); onClose(); }}><Plus size={15} />paste custom snippet</Command.Item>
             <Command.Item onSelect={() => { onClose(); onOpenSettings(); }}><Settings size={15} />open settings</Command.Item>
             <Command.Item onSelect={() => onSignIn("github")}><User size={15} />sign in with GitHub</Command.Item>
             <Command.Item onSelect={() => onSignIn("google")}><User size={15} />sign in with Google</Command.Item>
