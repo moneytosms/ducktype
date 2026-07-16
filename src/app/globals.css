@@ -437,8 +437,8 @@ button {
   pointer-events: none;
   position: relative;
   z-index: 1;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  /* real code: only an explicit "\n" in the source starts a new line, never a word-wrap */
+  white-space: pre;
   font-family: var(--duck-font), var(--font-geist-mono), Consolas, monospace;
   font-size: var(--code-size, 1.2rem);
   line-height: 1.85;

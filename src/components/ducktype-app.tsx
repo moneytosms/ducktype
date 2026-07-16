@@ -227,8 +227,15 @@ export function DuckTypeApp({ snippets }: { snippets: Snippet[] }) {
         return;
       }
       const longestLine = Math.max(24, ...snippet.code.split("\n").map((codeLine) => codeLine.length));
-      // ~0.6em per mono glyph
-      const px = Math.min(40, Math.max(17, shell.clientWidth / (longestLine * 0.605)));
+      // measure the real glyph width for the active font instead of guessing a fixed em ratio;
+      // an imprecise guess can leave a line a few px too wide, which used to force a word-wrap mid-line
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font-family:var(--duck-font),var(--font-geist-mono),Consolas,monospace;font-size:100px;";
+      probe.textContent = "0".repeat(20);
+      shell.appendChild(probe);
+      const glyphRatio = probe.getBoundingClientRect().width / 100 / 20;
+      shell.removeChild(probe);
+      const px = Math.min(40, Math.max(17, (shell.clientWidth / (longestLine * glyphRatio)) * 0.99));
       shell.style.setProperty("--code-size", `${px.toFixed(1)}px`);
     }
 
@@ -411,14 +418,6 @@ export function DuckTypeApp({ snippets }: { snippets: Snippet[] }) {
       const close = closePairs[appended];
       if (close && snippet.code[nextValue.length] === close) {
         nextValue += close;
-      }
-    }
-    // auto-indent: typing a correct newline also consumes the next line's leading whitespace
-    if (nextValue.length === typed.length + 1 && nextValue.endsWith("\n") && snippet.code[nextValue.length - 1] === "\n") {
-      let index = nextValue.length;
-      while (index < snippet.code.length && (snippet.code[index] === " " || snippet.code[index] === "\t")) {
-        nextValue += snippet.code[index];
-        index += 1;
       }
     }
     let startTimestamp = startedAt;
