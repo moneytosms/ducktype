@@ -2,6 +2,12 @@
   "name": "ducktype",
   "version": "0.1.0",
   "private": true,
+  "description": "Monkeytype-quality typing practice, purpose-built for real code: syntax highlighting, multi-line snippets, IDE mode.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/moneytosms/ducktype"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

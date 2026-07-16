@@ -62,4 +62,14 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 ```
 
-Run `supabase/schema.sql` in the Supabase SQL editor. Enable GitHub and Google OAuth providers in Supabase Auth.
+Run the migrations in `supabase/migrations/` (in order) in the Supabase SQL editor. Enable GitHub and Google OAuth providers in Supabase Auth, and add `<origin>/auth/callback` as a redirect URL.
+
+Guest mode needs none of this — typing works fully offline via localStorage even without a Supabase project.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## License
+
+[MIT](./LICENSE)
