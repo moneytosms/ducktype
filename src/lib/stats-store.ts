@@ -66,3 +66,19 @@ export function sessionsByDay(stats: StatsStore) {
   }
   return counts;
 }
+
+// consecutive local-calendar days with a completed test, counting back from
+// today; a day without a session yet doesn't break yesterday's streak
+export function currentStreak(stats: StatsStore) {
+  const days = new Set(stats.sessions.map((session) => new Date(session.ts).toDateString()));
+  const cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+  if (!days.has(cursor.toDateString())) cursor.setDate(cursor.getDate() - 1);
+
+  let streak = 0;
+  while (days.has(cursor.toDateString())) {
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
