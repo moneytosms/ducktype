@@ -14,6 +14,7 @@ import {
   FaEye as Eye,
   FaGaugeHigh as Gauge,
   FaGear as Settings,
+  FaGithub as GithubIcon,
   FaImage as ImageIcon,
   FaList as List,
   FaMagnifyingGlass as Search,
@@ -608,7 +609,7 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
           settings={settings}
           pool={snippets}
           activeSnippetId={snippet.id}
-          onPickSnippet={pickSnippet}
+          onBrowse={() => setIsPickerOpen(true)}
           onRandom={randomSnippet}
           query={paletteQuery}
           onQueryChange={setPaletteQuery}
@@ -768,6 +769,15 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
           <PaletteIcon size={13} />
           {themeLabel}
         </button>
+        <a
+          href="https://github.com/moneytosms/ducktype"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 opacity-60 transition-opacity hover:opacity-100"
+          title="View on GitHub"
+        >
+          <GithubIcon size={13} />
+        </a>
       </footer>
 
       {isPickerOpen ? (
@@ -786,7 +796,7 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
         settings={settings}
         pool={snippets}
         activeSnippetId={snippet.id}
-        onPickSnippet={pickSnippet}
+        onBrowse={() => setIsPickerOpen(true)}
         onRandom={randomSnippet}
         query={paletteQuery}
         onQueryChange={setPaletteQuery}
@@ -1016,7 +1026,7 @@ function SnippetPicker({
 
   return (
     <div className="palette-backdrop" onClick={onClose}>
-      <Command className="palette" onClick={(event) => event.stopPropagation()}>
+      <Command className="palette" filter={paletteFilter} onClick={(event) => event.stopPropagation()}>
         <Command.Input autoFocus placeholder="search snippets..." />
         <div className="palette-scope">
           {snippetScopes.map((entry) => (
@@ -1160,6 +1170,10 @@ function ResultChart({ points }: { points: SeriesPoint[] }) {
       ))}
     </svg>
   );
+}
+
+function paletteFilter(value: string, search: string) {
+  return value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
 }
 
 function cssVar(name: string) {
@@ -1423,7 +1437,7 @@ function Palette({
   authUser,
   authLabel,
   onOpenSettings,
-  onPickSnippet,
+  onBrowse,
   onRandom,
   onAddCustom,
 }: {
@@ -1443,7 +1457,7 @@ function Palette({
   authUser: AuthUser | null;
   authLabel: string;
   onOpenSettings: () => void;
-  onPickSnippet: (id: string) => void;
+  onBrowse: () => void;
   onRandom: () => void;
   onAddCustom: () => void;
 }) {
@@ -1456,7 +1470,7 @@ function Palette({
 
   return (
     <div className="palette-backdrop" onClick={onClose}>
-      <Command className="palette" onClick={(event) => event.stopPropagation()}>
+      <Command className="palette" filter={paletteFilter} onClick={(event) => event.stopPropagation()}>
         <Command.Input autoFocus value={query} onValueChange={onQueryChange} placeholder="change mode, language, theme, caret, font..." />
         <Command.List>
           <Command.Empty>No command found.</Command.Empty>
@@ -1464,6 +1478,7 @@ function Palette({
             <Command.Item onSelect={() => { onRestart(); onClose(); }}><RotateCcw size={15} />restart test<span className="palette-shortcut">Esc</span></Command.Item>
             <Command.Item onSelect={() => { onNext(); onClose(); }}><ChevronRight size={15} />next snippet</Command.Item>
             <Command.Item onSelect={() => { onRandom(); onClose(); }}><Shuffle size={15} />random snippet</Command.Item>
+            <Command.Item onSelect={() => { onClose(); onBrowse(); }}><List size={15} />browse snippets…</Command.Item>
             <Command.Item onSelect={() => choose({ viewMode: settings.viewMode === "ide" ? "focus" : "ide" })}>
               <Eye size={15} />ide mode <span>{settings.viewMode === "ide" ? "on — full snippet" : "off"}</span>
             </Command.Item>
@@ -1480,13 +1495,6 @@ function Palette({
                 <Command.Item onSelect={() => onSignIn("google")}><User size={15} />sign in with Google</Command.Item>
               </>
             )}
-          </Command.Group>
-          <Command.Group heading="Snippets">
-            {pool.map((entry) => (
-              <Command.Item key={entry.id} value={`type snippet ${entry.title} ${entry.language} ${entry.framework ?? ""} ${entry.category}`} onSelect={() => { onPickSnippet(entry.id); onClose(); }}>
-                <Code2 size={15} />type <span>{entry.title.toLowerCase()} · {entry.language.toLowerCase()}{entry.framework ? ` · ${entry.framework.toLowerCase()}` : ""}</span>{entry.id === activeSnippetId ? <Check size={14} className="palette-check" /> : null}
-              </Command.Item>
-            ))}
           </Command.Group>
           <Command.Group heading="Modes">
             {filters.domains.map((domain) => (
