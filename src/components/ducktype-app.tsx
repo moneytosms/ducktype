@@ -819,7 +819,18 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
   );
 }
 
+const BRACKET_RE = /[[\]{}()<>]/;
+const QUOTE_RE = /["'`]/;
+const AT_RE = /@/;
 const PUNCTUATION_RE = /[^\w\s]/;
+
+function punctuationColor(char: string): string | null {
+  if (BRACKET_RE.test(char)) return "var(--punct-bracket)";
+  if (QUOTE_RE.test(char)) return "var(--punct-quote)";
+  if (AT_RE.test(char)) return "var(--punct-at)";
+  if (PUNCTUATION_RE.test(char)) return "var(--punct)";
+  return null;
+}
 
 function CodeLayer({ code, typed, tokens }: { code: string; typed: string; tokens: TokenChar[] }) {
   const chars: TokenChar[] = tokens.length === code.length ? tokens : code.split("").map((char) => ({ char }));
@@ -828,7 +839,7 @@ function CodeLayer({ code, typed, tokens }: { code: string; typed: string; token
     <pre className="code-layer" aria-hidden="true">
       {chars.map((token, index) => {
         const state = getCharacterState(code, typed, index);
-        const color = PUNCTUATION_RE.test(token.char) ? "var(--punct)" : token.color ?? "var(--text)";
+        const color = punctuationColor(token.char) ?? token.color ?? "var(--text)";
         return (
           <span
             key={`${index}-${token.char}`}
