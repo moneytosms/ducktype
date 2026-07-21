@@ -526,7 +526,7 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
         data-funbox={settings.funbox}
         className="ide-fullscreen text-[var(--text)]"
         onClick={(event) => {
-          if ((event.target as HTMLElement).closest("button, select, input, a, [cmdk-root]")) return;
+          if ((event.target as HTMLElement).closest("button, select, input, a, .dropdown, [cmdk-root]")) return;
           inputRef.current?.focus();
         }}
       >
@@ -638,8 +638,8 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
       data-funbox={settings.funbox}
       className="flex min-h-screen flex-col px-5 py-6 text-[var(--text)] md:px-10"
       onClick={(event) => {
-        // don't steal focus from real controls (was closing native <select> dropdowns instantly)
-        if ((event.target as HTMLElement).closest("button, select, input, a, [cmdk-root]")) return;
+        // don't steal focus from real controls (was closing dropdowns instantly)
+        if ((event.target as HTMLElement).closest("button, select, input, a, .dropdown, [cmdk-root]")) return;
         inputRef.current?.focus();
       }}
     >
@@ -819,6 +819,8 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
   );
 }
 
+const PUNCTUATION_RE = /[^\w\s]/;
+
 function CodeLayer({ code, typed, tokens }: { code: string; typed: string; tokens: TokenChar[] }) {
   const chars: TokenChar[] = tokens.length === code.length ? tokens : code.split("").map((char) => ({ char }));
 
@@ -826,12 +828,13 @@ function CodeLayer({ code, typed, tokens }: { code: string; typed: string; token
     <pre className="code-layer" aria-hidden="true">
       {chars.map((token, index) => {
         const state = getCharacterState(code, typed, index);
+        const color = PUNCTUATION_RE.test(token.char) ? "var(--punct)" : token.color ?? "var(--text)";
         return (
           <span
             key={`${index}-${token.char}`}
             data-i={index}
             className={cn("code-char", state)}
-            style={{ "--syntax": token.color ?? "var(--text)" } as React.CSSProperties}
+            style={{ "--syntax": color } as React.CSSProperties}
           >
             {token.char}
           </span>
@@ -896,34 +899,22 @@ function ControlBar({
         </ControlGroup>
 
         <ControlGroup label="lang">
-          <span className="select-wrap">
-            <select
-              className="select"
-              aria-label="Language"
-              value={settings.language}
-              onChange={(event) => onUpdate({ language: event.target.value, framework: "Any", track: "Any" })}
-            >
-              {filters.languages.map((language) => (
-                <option key={language} value={language}>{language.toLowerCase()}</option>
-              ))}
-            </select>
-          </span>
+          <Dropdown
+            ariaLabel="Language"
+            value={settings.language}
+            onChange={(language) => onUpdate({ language, framework: "Any", track: "Any" })}
+            options={filters.languages.map((language) => ({ value: language, label: language.toLowerCase() }))}
+          />
         </ControlGroup>
 
         {filters.frameworks.length > 1 ? (
           <ControlGroup label="framework">
-            <span className="select-wrap">
-              <select
-                className="select"
-                aria-label="Framework"
-                value={settings.framework}
-                onChange={(event) => onUpdate({ framework: event.target.value, track: "Any" })}
-              >
-                {filters.frameworks.map((framework) => (
-                  <option key={framework} value={framework}>{framework.toLowerCase()}</option>
-                ))}
-              </select>
-            </span>
+            <Dropdown
+              ariaLabel="Framework"
+              value={settings.framework}
+              onChange={(framework) => onUpdate({ framework, track: "Any" })}
+              options={filters.frameworks.map((framework) => ({ value: framework, label: framework.toLowerCase() }))}
+            />
           </ControlGroup>
         ) : null}
 
@@ -947,33 +938,21 @@ function ControlBar({
       {hasSecondRow ? (
         <div className="control-row control-row-secondary">
           <ControlGroup label="category">
-            <span className="select-wrap">
-              <select
-                className="select"
-                aria-label="DSA category"
-                value={settings.track}
-                onChange={(event) => onUpdate({ track: event.target.value })}
-              >
-                {filters.tracks.map((track) => (
-                  <option key={track} value={track}>{track.toLowerCase()}</option>
-                ))}
-              </select>
-            </span>
+            <Dropdown
+              ariaLabel="DSA category"
+              value={settings.track}
+              onChange={(track) => onUpdate({ track })}
+              options={filters.tracks.map((track) => ({ value: track, label: track.toLowerCase() }))}
+            />
           </ControlGroup>
 
           <ControlGroup label="problem">
-            <span className="select-wrap">
-              <select
-                className="select"
-                aria-label="DSA problem"
-                value={activeSnippetId}
-                onChange={(event) => onPickSnippet(event.target.value)}
-              >
-                {pool.map((entry) => (
-                  <option key={entry.id} value={entry.id}>{entry.title.toLowerCase()}</option>
-                ))}
-              </select>
-            </span>
+            <Dropdown
+              ariaLabel="DSA problem"
+              value={activeSnippetId}
+              onChange={onPickSnippet}
+              options={pool.map((entry) => ({ value: entry.id, label: entry.title.toLowerCase() }))}
+            />
           </ControlGroup>
 
           <ControlGroup label="">
@@ -1074,6 +1053,73 @@ export function ControlButton({ active, onClick, icon, children }: { active: boo
       {icon}
       {children}
     </button>
+  );
+}
+
+export function Dropdown({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  className,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+  ariaLabel?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selected = options.find((option) => option.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  return (
+    <div className={cn("dropdown", className)} ref={rootRef}>
+      <button
+        type="button"
+        className="dropdown-trigger"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="dropdown-trigger-label">{selected?.label ?? ""}</span>
+      </button>
+      {open ? (
+        <ul className="dropdown-menu" role="listbox" aria-label={ariaLabel}>
+          {options.map((option) => (
+            <li
+              key={option.value}
+              role="option"
+              aria-selected={option.value === value}
+              className={cn("dropdown-item", option.value === value && "active")}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              {option.label}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -1255,13 +1301,11 @@ function AddSnippetModal({
           </div>
           <div className="settings-row">
             <span className="settings-label">language</span>
-            <span className="select-wrap">
-              <select className="select" value={optionIndex} onChange={(event) => setOptionIndex(Number(event.target.value))}>
-                {customLanguageOptions.map((option, index) => (
-                  <option key={option.label} value={index}>{option.label.toLowerCase()}</option>
-                ))}
-              </select>
-            </span>
+            <Dropdown
+              value={String(optionIndex)}
+              onChange={(value) => setOptionIndex(Number(value))}
+              options={customLanguageOptions.map((option, index) => ({ value: String(index), label: option.label.toLowerCase() }))}
+            />
           </div>
           <div className="settings-row">
             <textarea
