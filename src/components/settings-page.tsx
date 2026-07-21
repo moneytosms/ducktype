@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   caretStyles,
   ControlButton,
+  Dropdown,
   DuckLogo,
   fonts,
   fontSizes,
@@ -58,11 +59,12 @@ export function SettingsPage() {
 
         <div className="page-panel">
           <SettingsRow label="theme">
-            {themes.map((theme) => (
-              <ControlButton key={theme.id} active={settings.theme === theme.id} onClick={() => update({ theme: theme.id })}>
-                {theme.label}
-              </ControlButton>
-            ))}
+            <Dropdown
+              ariaLabel="Theme"
+              value={settings.theme}
+              onChange={(theme) => update({ theme })}
+              options={themes.map((theme) => ({ value: theme.id, label: theme.label, swatch: theme.swatch }))}
+            />
           </SettingsRow>
 
           <SettingsRow label="font">

@@ -41,22 +41,50 @@ import { signInWithProvider as signIn, signOut } from "@/lib/supabase/auth-actio
 import { pushSettings, pushStats, syncOnSignIn } from "@/lib/supabase/sync";
 import { getUsername } from "@/lib/supabase/profile";
 import { cn } from "@/lib/utils";
+import { mtThemes } from "@/lib/mt-themes-data";
+import { deriveThemeVars, pickShikiTheme, THEME_VAR_NAMES, type ThemeVars } from "@/lib/theme-vars";
 
 type TokenChar = {
   char: string;
   color?: string;
 };
 
-export const themes: { id: string; label: string; shiki: BundledTheme }[] = [
-  { id: "mallard", label: "mallard", shiki: "vitesse-dark" },
-  { id: "serika-dark", label: "serika dark", shiki: "github-dark" },
-  { id: "carbon", label: "carbon", shiki: "github-dark" },
-  { id: "paper", label: "paper", shiki: "github-light" },
-  { id: "dracula", label: "dracula", shiki: "dracula" },
-  { id: "gruvbox", label: "gruvbox", shiki: "gruvbox-dark-medium" },
-  { id: "nord", label: "nord", shiki: "nord" },
-  { id: "rose-pine", label: "rosé pine", shiki: "rose-pine" },
+const curatedThemes: { id: string; label: string; shiki: BundledTheme; swatch: string }[] = [
+  { id: "mallard", label: "mallard", shiki: "vitesse-dark", swatch: "#f2b32c" },
+  { id: "serika-dark", label: "serika dark", shiki: "github-dark", swatch: "#e2b714" },
+  { id: "carbon", label: "carbon", shiki: "github-dark", swatch: "#7dd3fc" },
+  { id: "paper", label: "paper", shiki: "github-light", swatch: "#b7791f" },
+  { id: "dracula", label: "dracula", shiki: "dracula", swatch: "#bd93f9" },
+  { id: "gruvbox", label: "gruvbox", shiki: "gruvbox-dark-medium", swatch: "#fabd2f" },
+  { id: "nord", label: "nord", shiki: "nord", swatch: "#88c0d0" },
+  { id: "rose-pine", label: "rosé pine", shiki: "rose-pine", swatch: "#ebbcba" },
 ];
+
+// imported from monkeytype (github.com/monkeytypegame/monkeytype) — prefixed
+// to avoid id clashes with the curated set above (e.g. "dracula", "nord")
+const importedThemes: { id: string; label: string; shiki: BundledTheme; swatch: string }[] = mtThemes.map((mt) => ({
+  id: `mt-${mt.id}`,
+  label: mt.label,
+  shiki: pickShikiTheme(mt.bg),
+  swatch: mt.bg,
+}));
+
+export const themes: { id: string; label: string; shiki: BundledTheme; swatch: string }[] = [...curatedThemes, ...importedThemes];
+
+const mtThemeById = new Map(mtThemes.map((mt) => [`mt-${mt.id}`, mt]));
+
+function applyThemeVars(themeId: string) {
+  const root = document.documentElement.style;
+  const mt = mtThemeById.get(themeId);
+  if (!mt) {
+    for (const varName of Object.values(THEME_VAR_NAMES)) root.removeProperty(varName);
+    return;
+  }
+  const vars = deriveThemeVars(mt);
+  for (const [key, varName] of Object.entries(THEME_VAR_NAMES)) {
+    root.setProperty(varName, vars[key as keyof ThemeVars]);
+  }
+}
 
 export const fonts = [
   { label: "JetBrains Mono", value: "var(--font-jetbrains)" },
@@ -198,6 +226,7 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
     saveSettings(settings);
     void pushSettings(settings).catch(() => {});
     document.documentElement.dataset.theme = settings.theme;
+    applyThemeVars(settings.theme);
     const font = fonts.find((option) => option.label === settings.font) ?? fonts[0];
     document.documentElement.style.setProperty("--duck-font", font.value);
     const size = fontSizes.find((option) => option.id === settings.fontSize) ?? fontSizes[1];
@@ -1075,22 +1104,32 @@ export function Dropdown({
   className,
 }: {
   value: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; swatch?: string }[];
   onChange: (value: string) => void;
   ariaLabel?: string;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const selected = options.find((option) => option.value === value);
+  const filterable = options.length > 12;
+  const filtered = filterable && filter.trim()
+    ? options.filter((option) => option.label.toLowerCase().includes(filter.trim().toLowerCase()))
+    : options;
+
+  function close() {
+    setOpen(false);
+    setFilter("");
+  }
 
   useEffect(() => {
     if (!open) return;
     function handlePointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      if (!rootRef.current?.contains(event.target as Node)) close();
     }
     function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") close();
     }
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleKey);
@@ -1110,25 +1149,39 @@ export function Dropdown({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
+        {selected?.swatch ? <span className="dropdown-swatch" style={{ background: selected.swatch }} /> : null}
         <span className="dropdown-trigger-label">{selected?.label ?? ""}</span>
       </button>
       {open ? (
-        <ul className="dropdown-menu" role="listbox" aria-label={ariaLabel}>
-          {options.map((option) => (
-            <li
-              key={option.value}
-              role="option"
-              aria-selected={option.value === value}
-              className={cn("dropdown-item", option.value === value && "active")}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              {option.label}
-            </li>
-          ))}
-        </ul>
+        <div className="dropdown-menu">
+          {filterable ? (
+            <input
+              className="dropdown-filter"
+              autoFocus
+              placeholder="filter..."
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+              aria-label={`Filter ${ariaLabel ?? "options"}`}
+            />
+          ) : null}
+          <ul className="dropdown-list" role="listbox" aria-label={ariaLabel}>
+            {filtered.map((option) => (
+              <li
+                key={option.value}
+                role="option"
+                aria-selected={option.value === value}
+                className={cn("dropdown-item", option.value === value && "active")}
+                onClick={() => {
+                  onChange(option.value);
+                  close();
+                }}
+              >
+                {option.swatch ? <span className="dropdown-swatch" style={{ background: option.swatch }} /> : null}
+                {option.label}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
     </div>
   );
