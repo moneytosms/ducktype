@@ -19,6 +19,8 @@ import {
   FaList as List,
   FaMagnifyingGlass as Search,
   FaPalette as PaletteIcon,
+  FaPause as Pause,
+  FaPlay as Play,
   FaPlus as Plus,
   FaServer as Server,
   FaShuffle as Shuffle,
@@ -105,6 +107,11 @@ export const fontSizes: { id: DuckSettings["fontSize"]; label: string; value: st
 ];
 
 export const caretStyles: DuckSettings["caretStyle"][] = ["bar", "block", "underline"];
+
+export const viewModes: { id: DuckSettings["viewMode"]; label: string }[] = [
+  { id: "focus", label: "focus" },
+  { id: "ide", label: "ide" },
+];
 
 export const customLanguageOptions: { label: string; language: string; shikiLang: BundledLanguage }[] = [
   { label: "Python", language: "Python", shikiLang: "python" },
@@ -362,7 +369,8 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
       if (settings.viewMode === "ide") {
         // ide mode shows the whole snippet; keep the caret in view via page scroll instead of clipping the window
         win.style.transform = "translateY(0px)";
-        el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        // "auto" (not "smooth") — smooth-scroll animations queue/interrupt on every keystroke during fast typing
+        el.scrollIntoView({ block: "nearest", behavior: "auto" });
       } else {
         // keep the first two lines pinned; scroll one line at a time after that
         const lineHeight = parseFloat(getComputedStyle(layer).lineHeight) || charH * 1.85;
@@ -464,6 +472,8 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
           setIsPickerOpen(false);
         } else if (isPaletteOpen) {
           setIsPaletteOpen(false);
+        } else if (settings.viewMode === "ide") {
+          updateSettings({ viewMode: "focus" });
         } else if (!startedAt) {
           setIsPaletteOpen(true);
         } else {
@@ -480,7 +490,7 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isComplete, isPaletteOpen, isPickerOpen, isAddSnippetOpen, startedAt, restart, nextSnippet]);
+  }, [isComplete, isPaletteOpen, isPickerOpen, isAddSnippetOpen, startedAt, restart, nextSnippet, settings.viewMode, updateSettings]);
 
   function handleChange(value: string) {
     if (isComplete) return;
@@ -548,7 +558,11 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
 
   const themeLabel = themes.find((option) => option.id === settings.theme)?.label ?? settings.theme;
 
-  if (!isComplete && settings.viewMode === "ide") {
+  if (settings.viewMode === "ide") {
+    const typedSoFar = snippet.code.slice(0, typed.length);
+    const lineNum = typedSoFar.split("\n").length;
+    const colNum = typedSoFar.length - typedSoFar.lastIndexOf("\n");
+
     return (
       <main
         data-typing={isTyping}
@@ -560,67 +574,80 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
         }}
       >
         <div className="ide-fullbar">
-          <span className="ide-dots"><i /><i /><i /></span>
+          <span className="ide-dots">
+            <button className="ide-dot-close" onClick={() => updateSettings({ viewMode: "focus" })} aria-label="Exit IDE mode" title="Exit IDE mode (esc)" />
+            <i /><i />
+          </span>
           <span className="ide-filename">{snippet.title.toLowerCase().replace(/\s+/g, "-")}.{snippet.shikiLang}</span>
           <div className="ide-fullbar-actions">
-            <button className="icon-button" onClick={() => setIsPaletteOpen(true)} title="Command palette (ctrl+p)">
+            <button className="icon-button" onClick={() => setIsPaletteOpen(true)} title="Command palette (ctrl+p)" aria-label="Command palette (ctrl+p)">
               <Search size={15} />
             </button>
-            <button className="icon-button" onClick={() => navigator.clipboard.writeText(snippet.code)} title="Copy snippet">
-              <Copy size={15} />
-            </button>
-            <button className="icon-button" onClick={() => updateSettings({ viewMode: "focus" })} title="Exit IDE mode">
+            <CopyIconButton text={snippet.code} className="icon-button" size={15} />
+            <button className="icon-button" onClick={() => updateSettings({ viewMode: "focus" })} title="Exit IDE mode (esc)" aria-label="Exit IDE mode (esc)">
               <X size={15} />
             </button>
           </div>
         </div>
 
-        <div className="ide-fullbody">
-          <div className="ide-gutter" aria-hidden="true">
-            {snippet.code.split("\n").map((_, i) => <div key={i}>{i + 1}</div>)}
+        {isComplete ? (
+          <div className="ide-results">
+            <ResultsPanel stats={stats} snippet={snippet} settings={settings} samples={finalSamples} tokens={tokens} onRestart={restart} onNext={nextSnippet} />
           </div>
-          <div className="typing-shell ide-mode" ref={shellRef}>
-            <textarea
-              ref={inputRef}
-              value={typed}
-              onChange={(event) => handleChange(event.target.value)}
-              onKeyDown={handleKeyDown}
-              autoCapitalize="off"
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              autoFocus
-              className="sr-typing-input"
-              aria-label="Typing input"
-            />
-            <div className="code-window" ref={windowRef}>
-              <span className={cn("smooth-caret", settings.caretStyle)} ref={caretRef} aria-hidden="true" />
-              <CodeLayer code={snippet.code} typed={typed} tokens={tokens} />
-            </div>
-          </div>
-        </div>
-
-        <div className="ide-statusbar">
-          <div className="ide-status-left">
-            <span>{snippet.language.toLowerCase()}</span>
-            <span>{snippet.title.toLowerCase()}</span>
-          </div>
-          <div className="ide-status-right">
-            {settings.showLiveTimer ? <span>{liveSeconds}s</span> : null}
-            {settings.showLiveWpm ? <span>{stats.wpm} wpm</span> : null}
-            {settings.showProgress ? (
-              <div className="progress-track w-24">
-                <div className="progress-fill" style={{ width: `${stats.progress}%` }} />
+        ) : (
+          <>
+            <div className="ide-fullbody">
+              <div className="ide-gutter" aria-hidden="true">
+                {snippet.code.split("\n").map((_, i) => <div key={i}>{i + 1}</div>)}
               </div>
-            ) : null}
-            <button className="icon-button" onClick={restart} title="Restart (esc)">
-              <RotateCcw size={14} />
-            </button>
-            <button className="icon-button" onClick={nextSnippet} title="Next snippet">
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
+              <div className="typing-shell ide-mode" ref={shellRef}>
+                <textarea
+                  ref={inputRef}
+                  value={typed}
+                  onChange={(event) => handleChange(event.target.value)}
+                  onKeyDown={handleKeyDown}
+                  autoCapitalize="off"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoFocus
+                  className="sr-typing-input"
+                  aria-label="Typing input"
+                />
+                <div className="code-window" ref={windowRef}>
+                  <span className={cn("smooth-caret", settings.caretStyle)} ref={caretRef} aria-hidden="true" />
+                  <CodeLayer code={snippet.code} typed={typed} tokens={tokens} />
+                </div>
+              </div>
+            </div>
+
+            <div className="ide-statusbar">
+              <div className="ide-status-left">
+                <span>{snippet.language.toLowerCase()}</span>
+                <span>{snippet.title.toLowerCase()}</span>
+                <span>Ln {lineNum}, Col {colNum}</span>
+              </div>
+              <div className="ide-status-right">
+                <span className="ide-live-group">
+                  {settings.showLiveTimer ? <span>{liveSeconds}s</span> : null}
+                  {settings.showLiveWpm ? <span>{stats.wpm} wpm</span> : null}
+                  <span>{stats.accuracy}% acc</span>
+                </span>
+                {settings.showProgress ? (
+                  <div className="progress-track w-24">
+                    <div className="progress-fill" style={{ width: `${stats.progress}%` }} />
+                  </div>
+                ) : null}
+                <button className="icon-button" onClick={restart} title="Restart (esc)" aria-label="Restart (esc)">
+                  <RotateCcw size={14} />
+                </button>
+                <button className="icon-button" onClick={nextSnippet} title="Next snippet" aria-label="Next snippet">
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          </>
+        )}
 
         {isPickerOpen ? (
           <SnippetPicker
@@ -678,19 +705,20 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
           duck<span className="logo-caret">_</span>type
         </Link>
         <div className="flex items-center gap-1">
-          <button className="icon-button" onClick={() => setIsPaletteOpen(true)} title="Command palette (esc or ctrl+p)">
+          <button className="icon-button" onClick={() => setIsPaletteOpen(true)} title="Command palette (esc or ctrl+p)" aria-label="Command palette (esc or ctrl+p)">
             <Search size={17} />
           </button>
-          <button className="icon-button" onClick={randomSnippet} title="Random snippet">
+          <button className="icon-button" onClick={randomSnippet} title="Random snippet" aria-label="Random snippet">
             <Shuffle size={17} />
           </button>
-          <Link className="icon-button" href="/settings" title="Settings">
+          <Link className="icon-button" href="/settings" title="Settings" aria-label="Settings">
             <Settings size={17} />
           </Link>
           <Link
             className="icon-button !w-auto gap-2 px-2.5"
             href="/profile"
             title="profile & account"
+            aria-label="profile & account"
           >
             <User size={17} />
             <span className="hidden text-xs md:inline">{authLabel}</span>
@@ -763,22 +791,21 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
                 </div>
               ) : null}
               <div className="flex items-center gap-3">
-                <button className="chrome icon-button" onClick={restart} title="Restart (esc)">
+                <button className="chrome icon-button" onClick={restart} title="Restart (esc)" aria-label="Restart (esc)">
                   <RotateCcw size={18} />
                 </button>
-                <button className="chrome icon-button" onClick={nextSnippet} title="Next snippet">
+                <button className="chrome icon-button" onClick={nextSnippet} title="Next snippet" aria-label="Next snippet">
                   <ChevronRight size={18} />
                 </button>
                 <button
-                  className={cn("chrome icon-button", settings.viewMode === "ide" && "active")}
-                  onClick={() => updateSettings({ viewMode: settings.viewMode === "ide" ? "focus" : "ide" })}
+                  className="chrome icon-button"
+                  onClick={() => updateSettings({ viewMode: "ide" })}
                   title="Toggle IDE mode (full snippet)"
+                  aria-label="Toggle IDE mode (full snippet)"
                 >
                   <Eye size={18} />
                 </button>
-                <button className="chrome icon-button" onClick={() => navigator.clipboard.writeText(snippet.code)} title="Copy snippet">
-                  <Copy size={18} />
-                </button>
+                <CopyIconButton text={snippet.code} className="chrome icon-button" size={18} />
               </div>
             </div>
           </div>
@@ -789,6 +816,8 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
         <div className="shortcut-hint flex flex-wrap items-center gap-3">
           <span><kbd>esc</kbd> restart / palette</span>
           <span><kbd>ctrl+p</kbd> command palette</span>
+          <span><kbd>tab</kbd> indent</span>
+          <span><kbd>enter</kbd> next (on results)</span>
         </div>
         <button
           className="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:text-[var(--text)]"
@@ -804,6 +833,7 @@ export function DuckTypeApp({ snippets: curatedSnippets }: { snippets: Snippet[]
           rel="noopener noreferrer"
           className="flex items-center gap-1 opacity-60 transition-opacity hover:opacity-100"
           title="View on GitHub"
+          aria-label="View on GitHub"
         >
           <GithubIcon size={13} />
         </a>
@@ -1029,6 +1059,8 @@ function SnippetPicker({
   onClose: () => void;
 }) {
   const [scope, setScope] = useState<SnippetScope>("selection");
+  const trapRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(trapRef, true);
 
   const pool = useMemo(() => {
     switch (scope) {
@@ -1044,7 +1076,7 @@ function SnippetPicker({
   }, [scope, snippets, settings]);
 
   return (
-    <div className="palette-backdrop" onClick={onClose}>
+    <div className="palette-backdrop" onClick={onClose} ref={trapRef}>
       <Command className="palette" filter={paletteFilter} onClick={(event) => event.stopPropagation()}>
         <Command.Input autoFocus placeholder="search snippets..." />
         <div className="palette-scope">
@@ -1092,6 +1124,59 @@ export function ControlButton({ active, onClick, icon, children }: { active: boo
     <button className={cn("control-button", active && "active")} onClick={onClick} aria-pressed={active}>
       {icon}
       {children}
+    </button>
+  );
+}
+
+// keeps Tab from leaving an open modal — cycles focus between its first/last focusable elements
+function useFocusTrap(containerRef: React.RefObject<HTMLElement | null>, active: boolean) {
+  useEffect(() => {
+    if (!active || !containerRef.current) return;
+    const container = containerRef.current;
+
+    function handleKey(event: KeyboardEvent) {
+      if (event.key !== "Tab") return;
+      const focusable = container.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const list = Array.from(focusable);
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    container.addEventListener("keydown", handleKey);
+    return () => container.removeEventListener("keydown", handleKey);
+  }, [active, containerRef]);
+}
+
+function CopyIconButton({ text, className, size = 18, title = "Copy snippet" }: { text: string; className?: string; size?: number; title?: string }) {
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
+
+  function handleClick() {
+    void navigator.clipboard.writeText(text);
+    setCopied(true);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => setCopied(false), 1500);
+  }
+
+  const label = copied ? "Copied!" : title;
+
+  return (
+    <button className={className} onClick={handleClick} title={label} aria-label={label}>
+      {copied ? <Check size={size} /> : <Copy size={size} />}
     </button>
   );
 }
@@ -1335,19 +1420,25 @@ function AddSnippetModal({
   const [title, setTitle] = useState("");
   const [optionIndex, setOptionIndex] = useState(0);
   const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const trapRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(trapRef, true);
 
   function handleSubmit() {
-    if (!code.trim()) return;
+    if (!code.trim()) {
+      setError("paste some code first");
+      return;
+    }
     const option = customLanguageOptions[optionIndex];
     onSubmit({ title: title.trim(), language: option.language, shikiLang: option.shikiLang, code });
   }
 
   return (
-    <div className="palette-backdrop" onClick={onClose}>
+    <div className="palette-backdrop" onClick={onClose} ref={trapRef}>
       <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
         <div className="settings-head">
           <span>paste your own snippet</span>
-          <button className="icon-button" onClick={onClose} title="Close (esc)">
+          <button className="icon-button" onClick={onClose} title="Close (esc)" aria-label="Close (esc)">
             <X size={16} />
           </button>
         </div>
@@ -1376,12 +1467,14 @@ function AddSnippetModal({
               className="select"
               style={{ width: "100%", minHeight: "12rem", resize: "vertical", fontFamily: "var(--duck-font)" }}
               value={code}
-              onChange={(event) => setCode(event.target.value)}
+              onChange={(event) => { setCode(event.target.value); if (error) setError(""); }}
               placeholder="paste your code here..."
               spellCheck={false}
+              aria-invalid={Boolean(error)}
             />
           </div>
           <div className="settings-row" style={{ justifyContent: "flex-end" }}>
+            {error ? <span className="settings-hint" style={{ padding: 0, color: "var(--wrong)" }} role="alert">{error}</span> : null}
             <button className="result-button" onClick={handleSubmit}>
               <Check size={14} /> save &amp; type it
             </button>
@@ -1403,27 +1496,83 @@ function ReplayModal({
   samples: KeySample[];
   onClose: () => void;
 }) {
-  const [replayTyped, setReplayTyped] = useState("");
+  const totalMs = Math.max(1, (samples[samples.length - 1]?.t ?? 0) * 1000);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const rafRef = useRef<number | null>(null);
+  const playStartRef = useRef(0);
+  const elapsedAtPlayStartRef = useRef(0);
+  const trapRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(trapRef, true);
 
   useEffect(() => {
-    const timers = samples.map((sample) =>
-      window.setTimeout(() => setReplayTyped(snippet.code.slice(0, sample.len)), Math.max(16, sample.t * 1000)),
-    );
-    timers.push(window.setTimeout(() => setReplayTyped(""), 0));
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [samples, snippet]);
+    if (!isPlaying) return;
+    playStartRef.current = performance.now();
+    elapsedAtPlayStartRef.current = elapsedMs;
+
+    function tick(now: number) {
+      const next = elapsedAtPlayStartRef.current + (now - playStartRef.current);
+      if (next >= totalMs) {
+        setElapsedMs(totalMs);
+        setIsPlaying(false);
+        return;
+      }
+      setElapsedMs(next);
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, totalMs]);
+
+  const replayTyped = useMemo(() => {
+    let len = 0;
+    for (const sample of samples) {
+      if (sample.t * 1000 <= elapsedMs) len = sample.len;
+      else break;
+    }
+    return snippet.code.slice(0, len);
+  }, [samples, snippet, elapsedMs]);
+
+  function togglePlay() {
+    if (!isPlaying && elapsedMs >= totalMs) setElapsedMs(0);
+    setIsPlaying((playing) => !playing);
+  }
+
+  function scrub(event: React.ChangeEvent<HTMLInputElement>) {
+    setIsPlaying(false);
+    setElapsedMs(Number(event.target.value));
+  }
 
   return (
-    <div className="palette-backdrop" onClick={onClose}>
+    <div className="palette-backdrop" onClick={onClose} ref={trapRef}>
       <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
         <div className="settings-head">
           <span>replay</span>
-          <button className="icon-button" onClick={onClose} title="Close (esc)">
+          <button className="icon-button" onClick={onClose} title="Close (esc)" aria-label="Close (esc)">
             <X size={16} />
           </button>
         </div>
         <div className="settings-body replay-body">
           <CodeLayer code={snippet.code} typed={replayTyped} tokens={tokens} />
+        </div>
+        <div className="settings-row replay-controls">
+          <button className="icon-button" onClick={togglePlay} title={isPlaying ? "Pause" : "Play"} aria-label={isPlaying ? "Pause" : "Play"}>
+            {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+          </button>
+          <input
+            className="replay-scrub"
+            type="range"
+            min={0}
+            max={totalMs}
+            step={1}
+            value={elapsedMs}
+            onChange={scrub}
+            aria-label="Replay position"
+          />
+          <span className="replay-time">{(elapsedMs / 1000).toFixed(1)}s / {(totalMs / 1000).toFixed(1)}s</span>
         </div>
       </div>
     </div>
@@ -1509,17 +1658,17 @@ function ResultsPanel({
       </div>
 
       <div className="mt-8 flex justify-center gap-2">
-        <button className="icon-button result-action" onClick={onNext} title="Next snippet (enter)">
+        <button className="icon-button result-action" onClick={onNext} title="Next snippet (enter)" aria-label="Next snippet (enter)">
           <ChevronRight size={19} />
         </button>
-        <button className="icon-button result-action" onClick={onRestart} title="Restart (esc)">
+        <button className="icon-button result-action" onClick={onRestart} title="Restart (esc)" aria-label="Restart (esc)">
           <RotateCcw size={17} />
         </button>
-        <button className="icon-button result-action" onClick={() => setIsReplayOpen(true)} title="Watch replay">
-          <Rewind size={17} />
+        <button className="result-button" onClick={() => setIsReplayOpen(true)} title="Watch replay" aria-label="Watch replay">
+          <Rewind size={16} /> replay
         </button>
-        <button className="icon-button result-action" onClick={() => downloadResultImage(stats, consistency, points, testTypeText)} title="Save result image">
-          <ImageIcon size={17} />
+        <button className="result-button" onClick={() => downloadResultImage(stats, consistency, points, testTypeText)} title="Save result image" aria-label="Save result image">
+          <ImageIcon size={16} /> save image
         </button>
       </div>
 
@@ -1569,6 +1718,9 @@ function Palette({
   onRandom: () => void;
   onAddCustom: () => void;
 }) {
+  const trapRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(trapRef, open);
+
   if (!open) return null;
 
   function choose(next: Partial<DuckSettings>) {
@@ -1577,7 +1729,7 @@ function Palette({
   }
 
   return (
-    <div className="palette-backdrop" onClick={onClose}>
+    <div className="palette-backdrop" onClick={onClose} ref={trapRef}>
       <Command className="palette" filter={paletteFilter} onClick={(event) => event.stopPropagation()}>
         <Command.Input autoFocus value={query} onValueChange={onQueryChange} placeholder="change mode, language, theme, caret, font..." />
         <Command.List>

@@ -473,6 +473,17 @@ button {
   background: var(--line);
 }
 
+.ide-dot-close {
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.ide-dot-close:hover {
+  background: var(--wrong);
+}
+
 .ide-filename {
   font-family: var(--duck-font), var(--font-geist-mono), Consolas, monospace;
   font-size: 0.78rem;
@@ -535,9 +546,24 @@ button {
   gap: 0.9rem;
 }
 
+.ide-live-group {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
 .ide-statusbar .icon-button {
   height: 1.6rem;
   width: 1.6rem;
+}
+
+.ide-results {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 2rem;
 }
 
 .sr-typing-input {
@@ -721,6 +747,23 @@ button {
   line-height: 1.7;
 }
 
+.replay-controls {
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.replay-scrub {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.replay-time {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
 .result-chart {
   width: 100%;
   max-width: 44rem;
@@ -807,7 +850,8 @@ button {
 
 [data-funbox="zen"] .live-stats,
 [data-funbox="zen"] .progress-track,
-[data-funbox="zen"] .test-head {
+[data-funbox="zen"] .test-head,
+[data-funbox="zen"] .ide-live-group {
   opacity: 0;
 }
 
@@ -1194,5 +1238,23 @@ button {
 
   .control-group + .control-group::before {
     margin: 0 0.5rem;
+  }
+
+  .ide-gutter {
+    display: none;
+  }
+
+  .ide-filename {
+    display: none;
+  }
+
+  .ide-statusbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .ide-status-left,
+  .ide-status-right {
+    gap: 0.5rem;
   }
 }

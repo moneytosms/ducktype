@@ -13,6 +13,7 @@ import {
   funboxes,
   SettingsRow,
   themes,
+  viewModes,
 } from "@/components/ducktype-app";
 import { loadSettings, saveSettings } from "@/lib/settings-store";
 import { defaultSettings } from "@/lib/snippets";
@@ -20,10 +21,12 @@ import type { DuckSettings } from "@/types/snippet";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<DuckSettings>(defaultSettings);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSettings(loadSettings());
+    setHydrated(true);
   }, []);
 
   function update(next: Partial<DuckSettings>) {
@@ -49,14 +52,20 @@ export function SettingsPage() {
           <DuckLogo />
           duck<span className="logo-caret">_</span>type
         </Link>
-        <Link className="icon-button" href="/" title="Back">
+        <Link className="icon-button" href="/" title="Back" aria-label="Back">
           <ArrowLeft size={17} />
         </Link>
       </header>
 
       <div className="page-body mx-auto mt-8 w-full max-w-6xl">
         <h1 className="page-title">settings</h1>
+        <p className="settings-hint" style={{ padding: 0 }}>
+          language, mode, time & framework filters are set from the <Link href="/" className="underline">main practice screen</Link> — this page covers appearance & behavior.
+        </p>
 
+        {!hydrated ? (
+          <div className="page-panel text-sm text-[var(--muted)]">loading…</div>
+        ) : (
         <div className="page-panel">
           <SettingsRow label="theme">
             <Dropdown
@@ -76,13 +85,21 @@ export function SettingsPage() {
           </SettingsRow>
 
           <SettingsRow label="font size">
-            <button className="icon-button" onClick={() => stepFontSize(-1)} title="Smaller">
+            <button className="icon-button" onClick={() => stepFontSize(-1)} title="Smaller" aria-label="Smaller">
               <ZoomOut size={15} />
             </button>
             <span className="settings-value">{activeFontSize.label}</span>
-            <button className="icon-button" onClick={() => stepFontSize(1)} title="Bigger">
+            <button className="icon-button" onClick={() => stepFontSize(1)} title="Bigger" aria-label="Bigger">
               <ZoomIn size={15} />
             </button>
+          </SettingsRow>
+
+          <SettingsRow label="view">
+            {viewModes.map((mode) => (
+              <ControlButton key={mode.id} active={settings.viewMode === mode.id} onClick={() => update({ viewMode: mode.id })}>
+                {mode.label}
+              </ControlButton>
+            ))}
           </SettingsRow>
 
           <SettingsRow label="caret">
@@ -119,6 +136,7 @@ export function SettingsPage() {
             {funboxes.find((funbox) => funbox.id === settings.funbox)?.desc}
           </p>
         </div>
+        )}
       </div>
     </main>
   );

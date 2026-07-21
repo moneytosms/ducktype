@@ -75,7 +75,7 @@ function UsernameEditor({ username, onSaved }: { username: string | null; onSave
 
   if (!isEditing) {
     return (
-      <button className="icon-button" title="edit username" onClick={() => { setDraft(username ?? ""); setError(null); setIsEditing(true); }}>
+      <button className="icon-button" title="edit username" aria-label="edit username" onClick={() => { setDraft(username ?? ""); setError(null); setIsEditing(true); }}>
         <Pen size={13} />
       </button>
     );
@@ -107,10 +107,10 @@ function UsernameEditor({ username, onSaved }: { username: string | null; onSave
         onKeyDown={(event) => { if (event.key === "Enter") submit(); if (event.key === "Escape") setIsEditing(false); }}
         placeholder="username"
       />
-      <button className="icon-button" title="save" onClick={submit} disabled={saving}>
+      <button className="icon-button" title="save" aria-label="save" onClick={submit} disabled={saving}>
         <Check size={13} />
       </button>
-      <button className="icon-button" title="cancel" onClick={() => setIsEditing(false)}>
+      <button className="icon-button" title="cancel" aria-label="cancel" onClick={() => setIsEditing(false)}>
         <X size={13} />
       </button>
       {error ? <span className="text-xs text-[var(--wrong)]">{error}</span> : null}
@@ -122,10 +122,12 @@ export function ProfilePage() {
   const user = useAuthUser();
   const [stats, setStats] = useState<StatsStore>({ version: 1, testsStarted: 0, sessions: [] });
   const [username, setUsernameState] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStats(loadStats());
+    setHydrated(true);
   }, []);
 
   useEffect(() => {
@@ -166,7 +168,7 @@ export function ProfilePage() {
           <DuckLogo />
           duck<span className="logo-caret">_</span>type
         </Link>
-        <Link className="icon-button" href="/" title="Back">
+        <Link className="icon-button" href="/" title="Back" aria-label="Back">
           <ArrowLeft size={17} />
         </Link>
       </header>
@@ -174,6 +176,10 @@ export function ProfilePage() {
       <div className="page-body mx-auto mt-8 w-full max-w-6xl">
         <h1 className="page-title">profile</h1>
 
+        {!hydrated ? (
+          <div className="page-panel text-sm text-[var(--muted)]">loading…</div>
+        ) : (
+        <>
         <div className="page-panel profile-header-card">
           <div className="profile-avatar">{displayName.charAt(0).toUpperCase()}</div>
           <div className="profile-header-info">
@@ -188,15 +194,15 @@ export function ProfilePage() {
           </div>
           <div className="profile-header-actions">
             {user ? (
-              <button className="icon-button" title="sign out" onClick={() => signOut()}>
+              <button className="icon-button" title="sign out" aria-label="sign out" onClick={() => signOut()}>
                 <LogOut size={16} />
               </button>
             ) : (
               <>
-                <button className="icon-button" title="continue with GitHub" onClick={() => signInWithProvider("github")}>
+                <button className="icon-button" title="continue with GitHub" aria-label="continue with GitHub" onClick={() => signInWithProvider("github")}>
                   <Github size={16} />
                 </button>
-                <button className="icon-button" title="continue with Google" onClick={() => signInWithProvider("google")}>
+                <button className="icon-button" title="continue with Google" aria-label="continue with Google" onClick={() => signInWithProvider("google")}>
                   <Google size={16} />
                 </button>
               </>
@@ -219,12 +225,22 @@ export function ProfilePage() {
           </div>
         </div>
 
+        {testsCompleted === 0 ? (
+          <div className="page-panel text-center text-sm text-[var(--muted)]">
+            no tests completed yet — finish a test to start building your stats.
+          </div>
+        ) : null}
+
         {trendPoints.length >= 2 ? (
           <div className="page-panel">
             <div className="profile-section-head">
               <span className="profile-stat-label">wpm trend · last {trendPoints.length} tests</span>
             </div>
             <TrendChart points={trendPoints} />
+          </div>
+        ) : trendPoints.length === 1 ? (
+          <div className="page-panel text-sm text-[var(--muted)]">
+            wpm trend needs at least 2 completed tests — 1 so far.
           </div>
         ) : null}
 
@@ -270,6 +286,8 @@ export function ProfilePage() {
             ))}
           </div>
         </div>
+        </>
+        )}
       </div>
     </main>
   );
